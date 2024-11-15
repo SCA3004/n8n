@@ -1,8 +1,6 @@
 import { parse } from 'flatted';
 import type {
-	IDataObject,
-	IPinData,
-	IRun,
+	IDataObject, IPinData, IRun,
 	IRunData,
 	IWorkflowExecutionDataProcess,
 } from 'n8n-workflow';
@@ -171,6 +169,8 @@ export class TestRunnerService {
 
 			// Run the test case and wait for it to finish
 			const execution = await this.runTestCase(workflow, pinData, user.id);
+
+			// TODO: handle the case where the execution fails
 
 			if (!execution) {
 				continue;
