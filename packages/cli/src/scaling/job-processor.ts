@@ -120,12 +120,19 @@ export class JobProcessor {
 			executionTimeoutTimestamp,
 		);
 
+		const { pushRef } = job.data;
+
 		additionalData.hooks = WorkflowExecuteAdditionalData.getWorkflowHooksWorkerExecuter(
 			execution.mode,
 			job.data.executionId,
 			execution.workflowData,
-			{ retryOf: execution.retryOf as string },
+			{ retryOf: execution.retryOf as string, pushRef },
 		);
+
+		if (pushRef) {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+			additionalData.sendDataToUI = WorkflowExecuteAdditionalData.sendDataToUI.bind({ pushRef });
+		}
 
 		additionalData.hooks.hookFunctions.sendResponse = [
 			async (response: IExecuteResponsePromiseData): Promise<void> => {
