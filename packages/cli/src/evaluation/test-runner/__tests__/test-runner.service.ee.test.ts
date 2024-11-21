@@ -82,6 +82,11 @@ describe('TestRunnerService', () => {
 		workflowRunner.run.mockClear();
 	});
 
+	afterEach(() => {
+		activeExecutions.getPostExecutePromise.mockClear();
+		workflowRunner.run.mockClear();
+	});
+
 	test('should create an instance of TestRunnerService', async () => {
 		const testRunnerService = new TestRunnerService(
 			workflowRepository,
@@ -174,6 +179,57 @@ describe('TestRunnerService', () => {
 				evaluationWorkflowId: 'evaluation-workflow-id',
 			}),
 		);
+
+		expect(workflowRunner.run).toHaveBeenCalledTimes(4);
+	});
+
+	test('should run both workflow under test and evaluation workflow', async () => {
+		const testRunnerService = new TestRunnerService(
+			workflowRepository,
+			workflowRunner,
+			executionRepository,
+			activeExecutions
+		);
+
+		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
+			id: 'workflow-under-test-id',
+			...wfUnderTestJson,
+		});
+
+		workflowRepository.findById.calledWith('evaluation-workflow-id').mockResolvedValueOnce({
+			id: 'evaluation-workflow-id',
+			...wfEvaluationJson,
+		});
+
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id');
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id-2');
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id-3');
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id-4');
+
+		// Mock executions of workflow under test
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id')
+			.mockResolvedValue(mockExecutionData());
+
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id-2')
+			.mockResolvedValue(mockExecutionData());
+
+		// Mock executions of evaluation workflow
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id-3')
+			.mockResolvedValue(mockExecutionData());
+
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id-4')
+			.mockResolvedValue(mockExecutionData());
+
+		await testRunnerService.runTest(
+			mock<User>(),
+			mock<TestDefinition>({
+				workflowId: 'workflow-under-test-id',
+				evaluationWorkflowId: 'evaluation-workflow-id',
+		}));
 
 		expect(workflowRunner.run).toHaveBeenCalledTimes(4);
 	});
