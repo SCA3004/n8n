@@ -10,6 +10,7 @@ import type { ExecutionEntity } from '@/databases/entities/execution-entity';
 import type { TestDefinition } from '@/databases/entities/test-definition.ee';
 import type { User } from '@/databases/entities/user';
 import type { ExecutionRepository } from '@/databases/repositories/execution.repository';
+import type { TestRunRepository } from '@/databases/repositories/test-run.repository';
 import type { WorkflowRepository } from '@/databases/repositories/workflow.repository';
 import type { WorkflowRunner } from '@/workflow-runner';
 
@@ -61,6 +62,7 @@ describe('TestRunnerService', () => {
 	const workflowRepository = mock<WorkflowRepository>();
 	const workflowRunner = mock<WorkflowRunner>();
 	const activeExecutions = mock<ActiveExecutions>();
+	const testRunRepository = mock<TestRunRepository>();
 
 	beforeEach(() => {
 		const executionsQbMock = mockDeep<SelectQueryBuilder<ExecutionEntity>>({
@@ -93,6 +95,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
+			testRunRepository,
 		);
 
 		expect(testRunnerService).toBeInstanceOf(TestRunnerService);
@@ -104,6 +107,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
+			testRunRepository,
 		);
 
 		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
@@ -137,6 +141,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
+			testRunRepository
 		);
 
 		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
@@ -188,7 +193,8 @@ describe('TestRunnerService', () => {
 			workflowRepository,
 			workflowRunner,
 			executionRepository,
-			activeExecutions
+			activeExecutions,
+			testRunRepository,
 		);
 
 		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
