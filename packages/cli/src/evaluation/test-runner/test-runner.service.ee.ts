@@ -83,7 +83,9 @@ export class TestRunnerService {
 		assert(executionId);
 
 		// Wait for the execution to finish
-		const executePromise = this.activeExecutions.getPostExecutePromise(executionId);
+		const executePromise = this.activeExecutions.getPostExecutePromise(
+			executionId,
+		);
 
 		return await executePromise;
 	}
