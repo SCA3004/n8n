@@ -1,4 +1,5 @@
 import type { SelectQueryBuilder } from '@n8n/typeorm';
+import type { InsertResult } from '@n8n/typeorm';
 import { stringify } from 'flatted';
 import { readFileSync } from 'fs';
 import { mock, mockDeep } from 'jest-mock-extended';
@@ -8,7 +9,6 @@ import path from 'path';
 import type { ActiveExecutions } from '@/active-executions';
 import type { ExecutionEntity } from '@/databases/entities/execution-entity';
 import type { TestDefinition } from '@/databases/entities/test-definition.ee';
-import type { TestRun } from '@/databases/entities/test-run.ee';
 import type { User } from '@/databases/entities/user';
 import type { ExecutionRepository } from '@/databases/repositories/execution.repository';
 import type { TestRunRepository } from '@/databases/repositories/test-run.repository.ee';
@@ -79,17 +79,17 @@ describe('TestRunnerService', () => {
 			.calledWith(expect.objectContaining({ where: { id: 'some-execution-id-2' } }))
 			.mockResolvedValueOnce(executionMocks[1]);
 
-		testRunRepository.create.mockReturnValue(mock<TestRun>());
+		testRunRepository.insert.mockResolvedValue(
+			mock<InsertResult>({ identifiers: [{ id: 'test-run-id' }] }),
+		);
 	});
 
 	afterEach(() => {
 		activeExecutions.getPostExecutePromise.mockClear();
 		workflowRunner.run.mockClear();
-	});
-
-	afterEach(() => {
-		activeExecutions.getPostExecutePromise.mockClear();
-		workflowRunner.run.mockClear();
+		testRunRepository.insert.mockClear();
+		testRunRepository.markAsRunning.mockClear();
+		testRunRepository.markAsCompleted.mockClear();
 	});
 
 	test('should create an instance of TestRunnerService', async () => {
@@ -144,7 +144,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
-			testRunRepository
+			testRunRepository,
 		);
 
 		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
@@ -238,8 +238,17 @@ describe('TestRunnerService', () => {
 			mock<TestDefinition>({
 				workflowId: 'workflow-under-test-id',
 				evaluationWorkflowId: 'evaluation-workflow-id',
-		}));
+			}),
+		);
 
 		expect(workflowRunner.run).toHaveBeenCalledTimes(4);
+
+		expect(testRunRepository.insert).toHaveBeenCalledTimes(1);
+		expect(testRunRepository.markAsRunning).toHaveBeenCalledTimes(1);
+		expect(testRunRepository.markAsRunning).toHaveBeenCalledWith('test-run-id');
+		expect(testRunRepository.markAsCompleted).toHaveBeenCalledTimes(1);
+		expect(testRunRepository.markAsCompleted).toHaveBeenCalledWith('test-run-id', {
+			success: false,
+		});
 	});
 });
