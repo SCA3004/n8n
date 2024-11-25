@@ -8,8 +8,10 @@ import path from 'path';
 import type { ActiveExecutions } from '@/active-executions';
 import type { ExecutionEntity } from '@/databases/entities/execution-entity';
 import type { TestDefinition } from '@/databases/entities/test-definition.ee';
+import type { TestRun } from '@/databases/entities/test-run.ee';
 import type { User } from '@/databases/entities/user';
 import type { ExecutionRepository } from '@/databases/repositories/execution.repository';
+import type { TestRunRepository } from '@/databases/repositories/test-run.repository.ee';
 import type { WorkflowRepository } from '@/databases/repositories/workflow.repository';
 import type { WorkflowRunner } from '@/workflow-runner';
 
@@ -61,6 +63,7 @@ describe('TestRunnerService', () => {
 	const workflowRepository = mock<WorkflowRepository>();
 	const workflowRunner = mock<WorkflowRunner>();
 	const activeExecutions = mock<ActiveExecutions>();
+	const testRunRepository = mock<TestRunRepository>();
 
 	beforeEach(() => {
 		const executionsQbMock = mockDeep<SelectQueryBuilder<ExecutionEntity>>({
@@ -75,11 +78,16 @@ describe('TestRunnerService', () => {
 		executionRepository.findOne
 			.calledWith(expect.objectContaining({ where: { id: 'some-execution-id-2' } }))
 			.mockResolvedValueOnce(executionMocks[1]);
+
+		testRunRepository.createTestRun.mockResolvedValue(mock<TestRun>({ id: 'test-run-id' }));
 	});
 
 	afterEach(() => {
 		activeExecutions.getPostExecutePromise.mockClear();
 		workflowRunner.run.mockClear();
+		testRunRepository.createTestRun.mockClear();
+		testRunRepository.markAsRunning.mockClear();
+		testRunRepository.markAsCompleted.mockClear();
 	});
 
 	test('should create an instance of TestRunnerService', async () => {
@@ -88,6 +96,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
+			testRunRepository,
 		);
 
 		expect(testRunnerService).toBeInstanceOf(TestRunnerService);
@@ -99,6 +108,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
+			testRunRepository,
 		);
 
 		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
@@ -132,6 +142,7 @@ describe('TestRunnerService', () => {
 			workflowRunner,
 			executionRepository,
 			activeExecutions,
+			testRunRepository,
 		);
 
 		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
@@ -176,5 +187,66 @@ describe('TestRunnerService', () => {
 		);
 
 		expect(workflowRunner.run).toHaveBeenCalledTimes(4);
+	});
+
+	test('should run both workflow under test and evaluation workflow', async () => {
+		const testRunnerService = new TestRunnerService(
+			workflowRepository,
+			workflowRunner,
+			executionRepository,
+			activeExecutions,
+			testRunRepository,
+		);
+
+		workflowRepository.findById.calledWith('workflow-under-test-id').mockResolvedValueOnce({
+			id: 'workflow-under-test-id',
+			...wfUnderTestJson,
+		});
+
+		workflowRepository.findById.calledWith('evaluation-workflow-id').mockResolvedValueOnce({
+			id: 'evaluation-workflow-id',
+			...wfEvaluationJson,
+		});
+
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id');
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id-2');
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id-3');
+		workflowRunner.run.mockResolvedValueOnce('some-execution-id-4');
+
+		// Mock executions of workflow under test
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id')
+			.mockResolvedValue(mockExecutionData());
+
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id-2')
+			.mockResolvedValue(mockExecutionData());
+
+		// Mock executions of evaluation workflow
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id-3')
+			.mockResolvedValue(mockExecutionData());
+
+		activeExecutions.getPostExecutePromise
+			.calledWith('some-execution-id-4')
+			.mockResolvedValue(mockExecutionData());
+
+		await testRunnerService.runTest(
+			mock<User>(),
+			mock<TestDefinition>({
+				workflowId: 'workflow-under-test-id',
+				evaluationWorkflowId: 'evaluation-workflow-id',
+			}),
+		);
+
+		expect(workflowRunner.run).toHaveBeenCalledTimes(4);
+
+		expect(testRunRepository.createTestRun).toHaveBeenCalledTimes(1);
+		expect(testRunRepository.markAsRunning).toHaveBeenCalledTimes(1);
+		expect(testRunRepository.markAsRunning).toHaveBeenCalledWith('test-run-id');
+		expect(testRunRepository.markAsCompleted).toHaveBeenCalledTimes(1);
+		expect(testRunRepository.markAsCompleted).toHaveBeenCalledWith('test-run-id', {
+			success: false,
+		});
 	});
 });
