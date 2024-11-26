@@ -1,10 +1,13 @@
 import type { INode, IRun, IWorkflowBase } from 'n8n-workflow';
 import { Service } from 'typedi';
 
+import type { WorkflowStatistics } from '@/databases/entities/workflow-statistics';
 import { StatisticsNames } from '@/databases/entities/workflow-statistics';
 import { WorkflowStatisticsRepository } from '@/databases/repositories/workflow-statistics.repository';
 import { EventService } from '@/events/event.service';
+import type { WorkflowStatisticsData } from '@/interfaces';
 import { Logger } from '@/logging/logger.service';
+import type { ListQuery } from '@/requests';
 import { UserService } from '@/services/user.service';
 import { TypedEmitter } from '@/typed-emitter';
 
@@ -128,5 +131,60 @@ export class WorkflowStatisticsService extends TypedEmitter<WorkflowStatisticsEv
 		}
 
 		this.eventService.emit('first-workflow-data-loaded', metrics);
+	}
+
+	async getData<
+		C extends 'count' | 'latestEvent',
+		D = WorkflowStatistics[C] extends number ? 0 : null,
+	>(workflowId: string, columnName: C, defaultValue: WorkflowStatistics[C] | D) {
+		const stats = await this.repository.find({
+			select: [columnName, 'name'],
+			where: { workflowId },
+		});
+
+		const data: WorkflowStatisticsData<WorkflowStatistics[C] | D> = {
+			productionSuccess: defaultValue,
+			productionError: defaultValue,
+			manualSuccess: defaultValue,
+			manualError: defaultValue,
+		};
+
+		stats.forEach(({ name, [columnName]: value }) => {
+			switch (name) {
+				case StatisticsNames.manualError:
+					data.manualError = value;
+					break;
+
+				case StatisticsNames.manualSuccess:
+					data.manualSuccess = value;
+					break;
+
+				case StatisticsNames.productionError:
+					data.productionError = value;
+					break;
+
+				case StatisticsNames.productionSuccess:
+					data.productionSuccess = value;
+			}
+		});
+
+		return data;
+	}
+
+	addExecutionStatistics(
+		entity: ListQuery.Workflow.Plain,
+	): ListQuery.Workflow.Plain | ListQuery.Workflow.WithExecutionStatistics {
+		const workflowStatistics = entity.statistics;
+		Object.assign(entity, {
+			executionStatistics: {
+				errors:
+					workflowStatistics?.find((s) => s.name === StatisticsNames.productionError)?.count ?? 0,
+				successes:
+					workflowStatistics?.find((s) => s.name === StatisticsNames.productionSuccess)?.count ?? 0,
+			},
+		});
+
+		delete entity.statistics;
+		return entity;
 	}
 }

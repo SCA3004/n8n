@@ -31,6 +31,7 @@ import { OwnershipService } from '@/services/ownership.service';
 import { ProjectService } from '@/services/project.service';
 import { RoleService } from '@/services/role.service';
 import { TagService } from '@/services/tag.service';
+import { WorkflowStatisticsService } from '@/services/workflow-statistics.service';
 import * as WorkflowHelpers from '@/workflow-helpers';
 
 import { WorkflowHistoryService } from './workflow-history/workflow-history.service.ee';
@@ -55,15 +56,25 @@ export class WorkflowService {
 		private readonly projectService: ProjectService,
 		private readonly executionRepository: ExecutionRepository,
 		private readonly eventService: EventService,
+		private readonly workflowStatisticsService: WorkflowStatisticsService,
 	) {}
 
-	async getMany(user: User, options?: ListQuery.Options, includeScopes?: boolean) {
+	async getMany(
+		user: User,
+		options?: ListQuery.Options,
+		includeScopes?: boolean,
+		includeExecutionStatistics?: boolean,
+	) {
 		const sharedWorkflowIds = await this.workflowSharingService.getSharedWorkflowIds(user, {
 			scopes: ['workflow:read'],
 		});
 
 		// eslint-disable-next-line prefer-const
-		let { workflows, count } = await this.workflowRepository.getMany(sharedWorkflowIds, options);
+		let { workflows, count } = await this.workflowRepository.getMany(
+			sharedWorkflowIds,
+			options,
+			includeExecutionStatistics,
+		);
 
 		if (hasSharing(workflows)) {
 			workflows = workflows.map((w) => this.ownershipService.addOwnedByAndSharedWith(w));
@@ -72,6 +83,10 @@ export class WorkflowService {
 		if (includeScopes) {
 			const projectRelations = await this.projectService.getProjectRelationsForUser(user);
 			workflows = workflows.map((w) => this.roleService.addScopes(w, user, projectRelations));
+		}
+
+		if (includeExecutionStatistics) {
+			workflows = workflows.map((w) => this.workflowStatisticsService.addExecutionStatistics(w));
 		}
 
 		workflows.forEach((w) => {
