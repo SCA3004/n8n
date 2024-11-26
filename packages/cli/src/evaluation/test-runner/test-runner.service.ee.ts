@@ -1,5 +1,11 @@
 import { parse } from 'flatted';
-import type { IPinData, IRun, IWorkflowExecutionDataProcess } from 'n8n-workflow';
+import type {
+	IDataObject,
+	IPinData,
+	IRun,
+	IRunData,
+	IWorkflowExecutionDataProcess,
+} from 'n8n-workflow';
 import assert from 'node:assert';
 import { Service } from 'typedi';
 
@@ -11,6 +17,7 @@ import type { WorkflowEntity } from '@/databases/entities/workflow-entity';
 import { ExecutionRepository } from '@/databases/repositories/execution.repository';
 import { WorkflowRepository } from '@/databases/repositories/workflow.repository';
 import type { IExecutionResponse } from '@/interfaces';
+import { getRunData } from '@/workflow-execute-additional-data';
 import { WorkflowRunner } from '@/workflow-runner';
 
 /**
@@ -32,14 +39,12 @@ export class TestRunnerService {
 	) {}
 
 	/**
+	 * Extracts the execution data from the past execution.
 	 * Creates a pin data object from the past execution data
 	 * for the given workflow.
 	 * For now, it only pins trigger nodes.
 	 */
-	private createPinDataFromExecution(
-		workflow: WorkflowEntity,
-		execution: ExecutionEntity,
-	): IPinData {
+	private createTestDataFromExecution(workflow: WorkflowEntity, execution: ExecutionEntity) {
 		const executionData = parse(execution.executionData.data) as IExecutionResponse['data'];
 
 		const triggerNodes = workflow.nodes.filter((node) => /trigger$/i.test(node.type));
@@ -53,7 +58,7 @@ export class TestRunnerService {
 			}
 		}
 
-		return pinData;
+		return { pinData, executionData };
 	}
 
 	/**
@@ -65,6 +70,7 @@ export class TestRunnerService {
 		testCasePinData: IPinData,
 		userId: string,
 	): Promise<IRun | undefined> {
+		// Prepare the data to run the workflow
 		const data: IWorkflowExecutionDataProcess = {
 			executionMode: 'evaluation',
 			runData: {},
@@ -78,10 +84,53 @@ export class TestRunnerService {
 		const executionId = await this.workflowRunner.run(data);
 		assert(executionId);
 
-		// Wait for the workflow to finish execution
+		// Wait for the execution to finish
 		const executePromise = this.activeExecutions.getPostExecutePromise(executionId);
 
 		return await executePromise;
+	}
+
+	/**
+	 * Run the evaluation workflow with the expected and actual run data.
+	 * @param evaluationWorkflow
+	 * @param expectedData
+	 * @param actualData
+	 * @private
+	 */
+	private async runTestCaseEvaluation(
+		evaluationWorkflow: WorkflowEntity,
+		expectedData: IRunData,
+		actualData: IRunData,
+	) {
+		// Prepare the evaluation wf input data.
+		// Provide both the expected data and the actual data
+		const evaluationInputData = {
+			json: {
+				originalExecution: expectedData,
+				newExecution: actualData,
+			},
+		};
+
+		// Prepare the data to run the evaluation workflow
+		const data = await getRunData(evaluationWorkflow, [evaluationInputData]);
+
+		// Trigger the evaluation workflow
+		const executionId = await this.workflowRunner.run(data);
+		assert(executionId);
+
+		// Wait for the execution to finish
+		const executePromise = this.activeExecutions.getPostExecutePromise(executionId);
+
+		return await executePromise;
+	}
+
+	private extractEvaluationResult(execution: IRun): IDataObject {
+		const lastNodeExecuted = execution.data.resultData.lastNodeExecuted;
+		assert(lastNodeExecuted, 'Could not find the last node executed in evaluation workflow');
+
+		// Extract the output of the last node executed in the evaluation workflow
+		// We use only the first main output
+		return execution.data.resultData.runData[lastNodeExecuted]?.[0]?.data?.main[0]?.[0]?.json ?? {};
 	}
 
 	/**
@@ -90,6 +139,9 @@ export class TestRunnerService {
 	public async runTest(user: User, test: TestDefinition): Promise<void> {
 		const workflow = await this.workflowRepository.findById(test.workflowId);
 		assert(workflow, 'Workflow not found');
+
+		const evaluationWorkflow = await this.workflowRepository.findById(test.evaluationWorkflowId);
+		assert(evaluationWorkflow, 'Evaluation workflow not found');
 
 		// 1. Make test cases from previous executions
 
@@ -105,7 +157,7 @@ export class TestRunnerService {
 				.andWhere('execution.workflowId = :workflowId', { workflowId: test.workflowId })
 				.getMany();
 
-		// 2. Run the test cases
+		// 2. Run over all the test cases
 
 		for (const { id: pastExecutionId } of pastExecutions) {
 			const pastExecution = await this.executionRepository.findOne({
@@ -114,7 +166,8 @@ export class TestRunnerService {
 			});
 			assert(pastExecution, 'Execution not found');
 
-			const pinData = this.createPinDataFromExecution(workflow, pastExecution);
+			const testData = this.createTestDataFromExecution(workflow, pastExecution);
+			const { pinData, executionData } = testData;
 
 			// Run the test case and wait for it to finish
 			const execution = await this.runTestCase(workflow, pinData, user.id);
@@ -123,7 +176,27 @@ export class TestRunnerService {
 				continue;
 			}
 
-			// TODO: 2.3 Collect the run data
+			// Collect the results of the test case execution
+			const testCaseRunData = execution.data.resultData.runData;
+
+			// Get the original runData from the test case execution data
+			const originalRunData = executionData.resultData.runData;
+
+			// Run the evaluation workflow with the original and new run data
+			const evalExecution = await this.runTestCaseEvaluation(
+				evaluationWorkflow,
+				originalRunData,
+				testCaseRunData,
+			);
+			assert(evalExecution);
+
+			// Extract the output of the last node executed in the evaluation workflow
+			const evalResult = this.extractEvaluationResult(evalExecution);
+			console.log({ evalResult });
+
+			// TODO: collect metrics
 		}
+
+		// TODO: 3. Aggregate the results
 	}
 }
