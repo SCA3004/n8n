@@ -95,6 +95,7 @@ import type { useRouter } from 'vue-router';
 import { useClipboard } from '@/composables/useClipboard';
 import { useUniqueNodeName } from '@/composables/useUniqueNodeName';
 import { isPresent } from '../utils/typesUtils';
+import { adjustNewNodes } from '@/utils/connectionNodeUtils';
 
 type AddNodeData = Partial<INodeUi> & {
 	type: string;
@@ -656,6 +657,7 @@ export function useCanvasOperations({ router }: { router: ReturnType<typeof useR
 		const lastInteractedWithNodeConnection = uiStore.lastInteractedWithNodeConnection;
 		const lastInteractedWithNodeHandle = uiStore.lastInteractedWithNodeHandle;
 
+		let connectedNodes: ReturnType<typeof createConnection> | undefined;
 		// If we have a specific endpoint to connect to
 		if (lastInteractedWithNodeHandle) {
 			const { type: connectionType, mode } = parseCanvasConnectionHandleString(
@@ -670,14 +672,14 @@ export function useCanvasOperations({ router }: { router: ReturnType<typeof useR
 			});
 
 			if (mode === CanvasConnectionMode.Input) {
-				createConnection({
+				connectedNodes = createConnection({
 					source: nodeId,
 					sourceHandle: nodeHandle,
 					target: lastInteractedWithNodeId,
 					targetHandle: lastInteractedWithNodeHandle,
 				});
 			} else {
-				createConnection({
+				connectedNodes = createConnection({
 					source: lastInteractedWithNodeId,
 					sourceHandle: lastInteractedWithNodeHandle,
 					target: nodeId,
@@ -687,7 +689,7 @@ export function useCanvasOperations({ router }: { router: ReturnType<typeof useR
 		} else {
 			// If a node is last selected then connect between the active and its child ones
 			// Connect active node to the newly created one
-			createConnection({
+			connectedNodes = createConnection({
 				source: lastInteractedWithNodeId,
 				sourceHandle: createCanvasConnectionHandleString({
 					mode: CanvasConnectionMode.Output,
@@ -708,7 +710,7 @@ export function useCanvasOperations({ router }: { router: ReturnType<typeof useR
 
 			const targetNode = workflowsStore.getNodeById(lastInteractedWithNodeConnection.target);
 			if (targetNode) {
-				createConnection({
+				connectedNodes = createConnection({
 					source: node.id,
 					sourceHandle: createCanvasConnectionHandleString({
 						mode: CanvasConnectionMode.Input,
@@ -719,6 +721,14 @@ export function useCanvasOperations({ router }: { router: ReturnType<typeof useR
 					targetHandle: lastInteractedWithNodeConnection.targetHandle,
 				});
 			}
+		}
+
+		if (connectedNodes) {
+			const { sourceNode, targetNode } = connectedNodes;
+			adjustNewNodes(sourceNode, targetNode, {
+				sourceIsNew: sourceNode.id === node.id,
+				targetIsNew: targetNode.id === node.id,
+			});
 		}
 	}
 
@@ -1113,6 +1123,8 @@ export function useCanvasOperations({ router }: { router: ReturnType<typeof useR
 		if (!keepPristine) {
 			uiStore.stateIsDirty = true;
 		}
+
+		return { sourceNode, targetNode };
 	}
 
 	function revertCreateConnection(connection: [IConnection, IConnection]) {

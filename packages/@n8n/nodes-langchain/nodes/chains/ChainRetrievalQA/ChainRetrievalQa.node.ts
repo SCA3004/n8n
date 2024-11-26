@@ -32,7 +32,7 @@ export class ChainRetrievalQa implements INodeType {
 		name: 'chainRetrievalQa',
 		icon: 'fa:link',
 		group: ['transform'],
-		version: [1, 1.1, 1.2, 1.3, 1.4],
+		version: [1, 1.1, 1.2, 1.3, 1.4, 1.5],
 		description: 'Answer questions about retrieved documents',
 		defaults: {
 			name: 'Question and Answer Chain',
@@ -112,7 +112,16 @@ export class ChainRetrievalQa implements INodeType {
 				...promptTypeOptions,
 				displayOptions: {
 					hide: {
-						'@version': [{ _cnd: { lte: 1.2 } }],
+						'@version': [{ _cnd: { lte: 1.4 } }],
+					},
+				},
+			},
+			{
+				...promptTypeOptions,
+				default: 'auto',
+				displayOptions: {
+					hide: {
+						'@version': [{ _cnd: { lte: 1.2 } }, { _cnd: { gte: 1.5 } }],
 					},
 				},
 			},
